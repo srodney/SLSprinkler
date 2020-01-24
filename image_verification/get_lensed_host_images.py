@@ -48,7 +48,7 @@ def get_cfg_from_file(user_cfg_path):
     return user_cfg
 
 def main():
-    hostgal_csv_path = '/home/jwp/stage/sl/SLSprinkler/img_pos_validation/lens2_data.csv'
+    hostgal_csv_path = '/home/jwp/stage/sl/SLSprinkler/image_verification/lens2_data.csv'
     args = parse_args()
     cfg = get_cfg_from_file(args.config)
     # Instantiate PSF models
@@ -126,12 +126,11 @@ def main():
     #np.save(img_filename, img)
     img = (img - np.min(img))/(np.max(img) - np.min(img))
     np.save('img_features.npy', img_features)
-    img_filename = 'validation_{0:07d}.png'.format(args.sys_id)
+    np.save('validation_{0:07d}.npy'.format(args.sys_id), img)
     plt.imshow(img, origin='lower')
     plt.colorbar()
-    plt.savefig(img_filename)
+    plt.savefig('validation_{0:07d}.png'.format(args.sys_id))
     plt.close()
 
-    
 if __name__ == '__main__':
     main()
