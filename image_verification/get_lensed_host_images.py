@@ -4,6 +4,8 @@ import argparse
 from importlib import import_module
 import numpy as np
 import pandas as pd
+from astropy.io import fits
+from astropy.cosmology import WMAP7
 # Lenstronomy modules
 import lenstronomy
 print("Lenstronomy path being used: {:s}".format(lenstronomy.__path__[0]))
@@ -13,6 +15,7 @@ from lenstronomy.LightModel.light_model import LightModel
 from lenstronomy.SimulationAPI.data_api import DataAPI
 import lenstronomy.Util.util as util
 import lenstronomy.Util.param_util as param_util
+from lenstronomy.Cosmo.lens_cosmo import LensCosmo
 from baobab.sim_utils import instantiate_PSF_models, get_PSF_model, generate_image
 import matplotlib.pyplot as plt
 
@@ -49,8 +52,19 @@ def get_cfg_from_file(user_cfg_path):
 
 def main():
     hostgal_csv_path = '/home/jwp/stage/sl/SLSprinkler/image_verification/lens2_data.csv'
+    lens_fits_path = '/home/jwp/stage/sl/SLSprinkler/image_verification/om10_qso_mock.fits'
     args = parse_args()
     cfg = get_cfg_from_file(args.config)
+    # Read in catalogs
+    src_light_df = pd.read_csv(hostgal_csv_path, index_col=None)
+    src_light_df = src_light_df[src_light_df['lens_cat_sys_id'] == args.sys_id].T.squeeze()
+    om10 = fits.open(lens_fits_path)[1].data
+    col_names = ['LENSID', 'ELLIP', 'PHIE', 'GAMMA', 'PHIG', 'ZLENS', 'ZSRC', 'VELDISP']
+    df_data = {}
+    for col in col_names:
+        df_data[col] = om10[col].byteswap().newbyteorder()
+    lens_df = pd.DataFrame(df_data)
+    lens_df = lens_df[lens_df['LENSID'] == args.sys_id].T.squeeze()
     # Instantiate PSF models
     psf_models = instantiate_PSF_models(cfg.psf, cfg.instrument.pixel_scale)
     psf_model = get_PSF_model(psf_models, len(psf_models), current_idx=0)
@@ -64,35 +78,32 @@ def main():
     lens_mass_model = LensModel(lens_model_list=kwargs_model['lens_model_list'])
     src_light_model = LightModel(light_model_list=kwargs_model['source_light_model_list'])
     lens_eq_solver = LensEquationSolver(lens_mass_model)
+    # Instantiate cosmology-aware models
+    lens_cosmo = LensCosmo(z_lens=lens_df['ZLENS'], z_source=lens_df['ZSRC'], cosmo=WMAP7)
     # Detector and observation conditions
     kwargs_detector = util.merge_dicts(cfg.instrument, cfg.bandpass, cfg.observation)
     kwargs_detector.update(psf_type=cfg.psf.type)
     data_api = DataAPI(cfg.image.num_pix, **kwargs_detector)
     # Gather input params
     # Lens mass
-    q, phi = 0.7735461, -117.194
-    phi = np.deg2rad(phi)
-    e1, e2 = param_util.phi_q2_ellipticity(phi, q)
+    e1, e2 = param_util.shear_polar2cartesian(np.deg2rad(lens_df['PHIE']), lens_df['ELLIP'])
+    theta_E = lens_cosmo.sis_sigma_v2theta_E(lens_df['VELDISP'])
     cfg.lens_mass = dict(
                           center_x=0.0,
                           center_y=0.0,
                           #s_scale=0.0,
-                          theta_E=1.426983229,
+                          theta_E=theta_E,
                           e1=e1,
                           e2=e2
                           )
     # External shear
-    psi_ext = 156.991
-    psi_ext = np.deg2rad(psi_ext)
+    psi_ext = np.deg2rad(lens_df['PHIG'])
     cfg.external_shear = dict(
-                              gamma_ext=0.03576569,
+                              gamma_ext=lens_df['GAMMA'],
                               psi_ext=psi_ext
                               )
     # Source light
-    src_light_df = pd.read_csv(hostgal_csv_path, index_col=None)
-    src_light_df = src_light_df[src_light_df['lens_cat_sys_id'] == args.sys_id].T.squeeze()
     bulge_or_disk = 'bulge'
-    
     src_light_df['src_center_x'] = (src_light_df['ra_host'] - src_light_df['ra_lens'])*3600.0 # arcsec
     src_light_df['src_center_y'] = (src_light_df['dec_host'] - src_light_df['dec_lens'])*3600.0 # arcsec
     bandpass = 'r'
