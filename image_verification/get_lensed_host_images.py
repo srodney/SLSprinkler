@@ -59,7 +59,8 @@ def main():
     src_light_df = pd.read_csv(hostgal_csv_path, index_col=None)
     src_light_df = src_light_df[src_light_df['lens_cat_sys_id'] == args.sys_id].T.squeeze()
     om10 = fits.open(lens_fits_path)[1].data
-    col_names = ['LENSID', 'ELLIP', 'PHIE', 'GAMMA', 'PHIG', 'ZLENS', 'ZSRC', 'VELDISP']
+    print(fits.open(lens_fits_path)[1].columns)
+    col_names = ['LENSID', 'ELLIP', 'PHIE', 'GAMMA', 'PHIG', 'ZLENS', 'ZSRC', 'VELDISP', 'XSRC', 'YSRC',]
     df_data = {}
     for col in col_names:
         df_data[col] = om10[col].byteswap().newbyteorder()
@@ -92,7 +93,7 @@ def main():
                           center_x=0.0,
                           center_y=0.0,
                           #s_scale=0.0,
-                          theta_E=theta_E,
+                          theta_E=theta_E*1.001573615, # FIXME: hardcoded for system 4077543
                           e1=e1,
                           e2=e2
                           )
@@ -104,8 +105,8 @@ def main():
                               )
     # Source light
     bulge_or_disk = 'bulge'
-    src_light_df['src_center_x'] = (src_light_df['ra_host'] - src_light_df['ra_lens'])*3600.0 # arcsec
-    src_light_df['src_center_y'] = (src_light_df['dec_host'] - src_light_df['dec_lens'])*3600.0 # arcsec
+    src_light_df['src_center_x'] = (lens_df['XSRC']) # arcsec
+    src_light_df['src_center_y'] = (lens_df['YSRC']) # arcsec
     bandpass = 'r'
     magnitude_src = src_light_df['magnorm_{:s}_{:s}'.format(bulge_or_disk, bandpass)]
     #magnitude_src = 15.0
